@@ -1,0 +1,104 @@
+﻿jsmode "WebView2\\" + currentmacrofilename;
+
+js {
+
+// 正規化
+function main() {
+
+    const srcText = getselectedtext() || gettotaltext();
+    if (!srcText) {
+        return;
+    }
+
+    const textArray = srcText.split('\n');
+    const normalizedTextArray = textArray.map(normalizeLine);
+    const joinedText = normalizedTextArray.join('\n');
+
+    // 置換前後で変化がない場合は何もしない
+    if (srcText === joinedText) {
+        return;
+    }
+
+    if (selecting()) {
+        insert(joinedText);
+    }
+    else {
+        settotaltext(joinedText);
+    }
+}
+
+
+// セグメンター 'ja' は言語タグ、'grapheme' はテキスト要素（字）を分割する単位
+const segmenter = new Intl.Segmenter('ja', { granularity: 'grapheme' });
+
+// グラフェムイテレータ
+function* graphemeIterator(text) {
+    for (const segment of segmenter.segment(text)) {
+        yield segment.segment; // 各segmentのsegmentプロパティには字が含まれる
+    }
+}
+
+// 行を正規化
+function normalizeLine(line) {
+
+    // 行全体がSJIS に変換可能な文字列はそのまま返す
+    if (canConvertSJIS(line)) {
+        return line;
+    }
+
+    // 行のテキストを１文字ずつカスタム正規化
+    let normalizedLineText = '';
+    for (const grapheme of graphemeIterator(line)) {
+        normalizedLineText += normalizeChar(grapheme);
+    }
+
+    return normalizedLineText;
+}
+
+// １文字を正規化
+function normalizeChar(chr) {
+    // SJIS に変換可能な文字列はそのまま返す
+    if (canConvertSJIS(chr)) {
+        return chr;
+    }
+
+    // NFC に変換出来た文字列はそのまま返す
+    let normalizeNFC = chr.normalize('NFC');
+    if (chr !== normalizeNFC) {
+       return normalizeNFC;
+    }
+
+    // NFKC でトライ
+    let normalizeNFKC = chr.normalize('NFKC');
+    // 変換した結果、１文字だったものが逆に分解されたり、といったことをしていない限りにおいては、それを返す
+    if (normalizeNFKC.length <= chr.length) {
+        return normalizeNFKC;
+    }
+
+    // それでも変換できない場合はそのまま返す
+    return chr;
+}
+
+
+var convDll;
+{
+    if (!convDll) {
+        convDll = loaddll(currentmacrodirectory() + "\\CanConvertCP932_x64.dll");
+    }
+    if (!convDll) {
+        convDll = loaddll(currentmacrodirectory() + "\\CanConvertCP932_x86.dll");
+    }
+    if (!convDll) {
+        message("CanConvertCP932_*.dll がロード出来ませんでした。");
+    }
+}
+
+// SJIS に変換可能かどうかを判定
+function canConvertSJIS(text) {
+    return convDll.dllFuncW.CanConvertCP932(text);
+}
+
+main();
+
+
+}
